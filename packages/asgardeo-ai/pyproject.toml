@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "asgardeo-ai"
+version = "0.1.b1"
+description = "Asgardeo AI SDK - OAuth2 authentication for AI agents and frameworks"
+authors = ["WSO2 <architecture@wso2.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+asgardeo = "^0.1.b1"
+
+[tool.poetry.group.dev.dependencies]
+twine = "^6.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

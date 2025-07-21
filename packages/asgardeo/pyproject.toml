@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "asgardeo"
+version = "0.1.0b1"
+description = "Asgardeo SDK - OAuth2 authentication and identity management"
+authors = ["WSO2 <architecture@wso2.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+packages = [{include = "asgardeo"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pydantic = "^2.0.0"
+httpx = "^0.25.0"
+
+[tool.poetry.group.dev.dependencies]
+twine = "^6.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
