@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "asgardeo-ai"
-version = "0.1.b1"
+version = "0.1.0b1"
 description = "Asgardeo AI SDK - OAuth2 authentication for AI agents and frameworks"
 authors = ["WSO2 <architecture@wso2.com>"]
 license = "Apache-2.0"

@@ -16,7 +16,7 @@ Core Python SDK for WSO2 Asgardeo OAuth2 authentication and identity management.
 
 Specialized SDK for OAuth2 authentication in AI agents and frameworks.
 
-- **Version**: 0.1.b1
+- **Version**: 0.1.0b1
 - **Features**: Simplified OAuth2 authentication manager for AI applications
 - **Installation**: `pip install asgardeo-ai`
 
