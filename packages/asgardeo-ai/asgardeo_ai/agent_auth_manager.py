@@ -19,7 +19,6 @@ from asgardeo.auth import (
 )
 from .models import AgentConfig
 from .exceptions import AIAuthenticationError, AgentAuthenticationError
-import pyotp
 
 logger = logging.getLogger(__name__)
 
