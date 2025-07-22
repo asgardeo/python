@@ -14,8 +14,6 @@ class OAuthTokenType(str, Enum):
     CLIENT_CREDENTIALS = "client_credentials"
     AUTHORIZATION_CODE = "authorization_code"
     REFRESH_TOKEN = "refresh_token"
-    DEVICE_CODE = "device_code"
-
 
 class OAuthToken(BaseModel):
     """OAuth2 token response model"""

@@ -8,8 +8,6 @@ from .requests import (
     ClientCredentialsRequest,
     AuthorizationCodeRequest,
     RefreshTokenRequest,
-    DeviceCodeRequest,
-    DeviceAuthorizationRequest,
     AuthorizationRequest,
 )
 from .native_auth import (
@@ -33,8 +31,6 @@ __all__ = [
     "ClientCredentialsRequest",
     "AuthorizationCodeRequest",
     "RefreshTokenRequest",
-    "DeviceCodeRequest",
-    "DeviceAuthorizationRequest",
     "AuthorizationRequest",
     "NativeAuthResponse",
     "NativeAuthInitRequest",

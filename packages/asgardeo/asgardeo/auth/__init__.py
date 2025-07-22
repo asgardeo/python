@@ -14,8 +14,6 @@ from .models.requests import (
     ClientCredentialsRequest,
     AuthorizationCodeRequest,
     RefreshTokenRequest,
-    DeviceCodeRequest,
-    DeviceAuthorizationRequest,
     AuthorizationRequest,
 )
 from .models.native_auth import (
@@ -59,7 +57,6 @@ from .utils.oauth import (
 __all__ = [
     # Core components
     "TokenClient",
-    "TokenManager",
     "NativeAuthClient",
     # Models
     "OAuthToken",
@@ -69,8 +66,6 @@ __all__ = [
     "ClientCredentialsRequest",
     "AuthorizationCodeRequest",
     "RefreshTokenRequest",
-    "DeviceCodeRequest",
-    "DeviceAuthorizationRequest",
     "AuthorizationRequest",
     # Native Auth Models
     "NativeAuthResponse",

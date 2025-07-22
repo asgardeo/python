@@ -41,26 +41,6 @@ class RefreshTokenRequest(TokenRequest):
     grant_type: str = "refresh_token"
     refresh_token: str
 
-
-class DeviceCodeRequest(TokenRequest):
-    """Device code token request"""
-
-    grant_type: str = "urn:ietf:params:oauth:grant-type:device_code"
-    device_code: str
-
-
-class DeviceAuthorizationRequest(BaseModel):
-    """Device authorization request"""
-
-    client_id: str
-    scope: Optional[str] = None
-    audience: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for HTTP request"""
-        return {k: v for k, v in self.model_dump().items() if v is not None}
-
-
 class AuthorizationRequest(BaseModel):
     """Authorization request for authorization code flow"""
 
