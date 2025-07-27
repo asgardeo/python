@@ -40,7 +40,7 @@ class AgentAuthManager:
 
         # Initialize clients
         self.token_client = TokenClient(client_config, server_config)
-        self.native_client = NativeAuthClient(client_config, server_config)
+        # Note: native_client is now created per authentication call to avoid PKCE conflicts
 
     async def get_agent_token(self, scopes: List[str]) -> OAuthToken:
         """
@@ -65,8 +65,11 @@ class AgentAuthManager:
                 f"Getting agent token for agent: {self.agent_config.agent_name}"
             )
 
+            # Create NEW NativeAuthClient for this authentication call to avoid PKCE conflicts
+            native_client = NativeAuthClient(self.client_config, self.server_config)
+
             # Use native authentication flow for agent
-            init_response = await self.native_client.initiate_authentication(
+            init_response = await native_client.initiate_authentication(
                 scopes=scopes
             )
 
@@ -77,11 +80,11 @@ class AgentAuthManager:
                 auth_data = init_response.auth_data
                 pass
             elif init_response.flow_status == FlowStatus.INCOMPLETE:
-                username_auth = self.native_client.find_authenticator_by_type(
+                username_auth = native_client.find_authenticator_by_type(
                     init_response, "Username & Password"
                 )
                 auth_response = (
-                    await self.native_client.authenticate_with_username_password(
+                    await native_client.authenticate_with_username_password(
                         flow_id=init_response.flow_id,
                         authenticator_id=username_auth["id"],
                         username=self.agent_config.agent_id,
@@ -103,13 +106,13 @@ class AgentAuthManager:
                 )
 
             auth_code = auth_data.code
-            code_verifier = self.native_client.get_code_verifier()
+            code_verifier = native_client.get_code_verifier()
             if auth_code:
                 print(f"   Authorization Code: {auth_code[:10]}...")
                 print(f"   Code Verifier Available: {'Yes' if code_verifier else 'No'}")
                 token_request = AuthorizationCodeRequest(
                     code=auth_code,
-                    redirect_uri=self.native_client.client_config.redirect_uri,
+                    redirect_uri=native_client.client_config.redirect_uri,
                     code_verifier=code_verifier,
                 )
                 return await self.token_client.request_token(token_request)
