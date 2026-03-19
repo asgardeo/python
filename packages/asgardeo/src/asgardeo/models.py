@@ -63,8 +63,31 @@ class OAuthToken:
     scope: str | None = None
 
 
+@dataclass
+class CIBAResponse:
+    """CIBA backchannel authentication response."""
+
+    auth_req_id: str
+    interval: int = 2
+    expires_in: int = 120
+    auth_url: str | None = None
+
+
 class FlowStatus:
     """Authentication flow status constants."""
 
     SUCCESS_COMPLETED = "SUCCESS_COMPLETED"
     INCOMPLETE = "INCOMPLETE"
+
+
+class CIBAStatus:
+    """CIBA polling status constants."""
+
+    AUTHORIZATION_PENDING = "authorization_pending"
+    SLOW_DOWN = "slow_down"
+    EXPIRED_TOKEN = "expired_token"
+    ACCESS_DENIED = "access_denied"
+
+
+class CIBAAuthenticationError(AuthenticationError):
+    """Raised when CIBA authentication fails (expired, denied, etc.)."""
