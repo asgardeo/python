@@ -15,20 +15,25 @@ under the License.
 
 """Agent-enhanced OAuth2 authentication manager for Asgardeo AI."""
 
+import asyncio
 import logging
 import base64
 import os
-from typing import Dict, List, Optional, Tuple, Any
+import time
+from typing import Callable, Dict, List, Optional, Tuple, Any
 from urllib.parse import urlencode
 from dataclasses import dataclass
 
 from asgardeo import (
-    AsgardeoConfig, 
-    OAuthToken, 
-    FlowStatus, 
-    AsgardeoNativeAuthClient, 
+    AsgardeoConfig,
+    OAuthToken,
+    FlowStatus,
+    AsgardeoNativeAuthClient,
     AsgardeoTokenClient,
     AuthenticationError,
+    CIBAAuthenticationError,
+    CIBAResponse,
+    CIBAStatus,
     TokenError,
     ValidationError,
     generate_pkce_pair,
@@ -258,6 +263,130 @@ class AgentAuthManager:
         except Exception as e:
             logger.error(f"OBO token exchange failed: {e}")
             raise TokenError(f"OBO token exchange failed: {e}")
+
+    async def _poll_for_token(
+        self,
+        ciba_response: CIBAResponse,
+        scope: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> OAuthToken:
+        """Poll the token endpoint until CIBA authentication completes.
+
+        :param ciba_response: CIBA initiation response with auth_req_id, interval, expires_in
+        :param scope: Optional scope override
+        :param timeout: Optional max wait time in seconds (defaults to ciba_response.expires_in)
+        :return: OAuthToken on successful authentication
+        :raises CIBAAuthenticationError: If authentication is denied or expires
+        """
+        interval = ciba_response.interval
+        max_wait = min(
+            timeout or ciba_response.expires_in,
+            ciba_response.expires_in,
+        )
+        start_time = time.monotonic()
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed >= max_wait:
+                raise CIBAAuthenticationError(
+                    "CIBA authentication timed out: exceeded maximum wait time."
+                )
+
+            await asyncio.sleep(interval)
+
+            try:
+                token = await self.token_client.get_token(
+                    "urn:openid:params:grant-type:ciba",
+                    auth_req_id=ciba_response.auth_req_id,
+                    scope=scope,
+                )
+                return token
+            except CIBAAuthenticationError as e:
+                error_msg = str(e)
+                if CIBAStatus.AUTHORIZATION_PENDING in error_msg:
+                    logger.debug("CIBA authorization pending, continuing to poll...")
+                    continue
+                elif CIBAStatus.SLOW_DOWN in error_msg:
+                    interval += 5
+                    logger.debug(f"CIBA slow_down received, increasing interval to {interval}s")
+                    continue
+                elif CIBAStatus.EXPIRED_TOKEN in error_msg:
+                    raise CIBAAuthenticationError(
+                        "CIBA authentication request expired. The user did not authenticate in time."
+                    )
+                elif CIBAStatus.ACCESS_DENIED in error_msg:
+                    raise CIBAAuthenticationError(
+                        "CIBA authentication denied. The user rejected the authentication request."
+                    )
+                else:
+                    raise
+
+    async def get_obo_token_with_ciba(
+        self,
+        login_hint: str,
+        agent_token: OAuthToken,
+        scopes: Optional[List[str]] = None,
+        binding_message: Optional[str] = None,
+        notification_channel: Optional[str] = None,
+        timeout: Optional[int] = None,
+        on_initiated: Optional[Callable[[CIBAResponse], None]] = None,
+    ) -> Tuple[CIBAResponse, OAuthToken]:
+        """Get on-behalf-of token using CIBA flow.
+
+        Initiates a CIBA request for a user identified by login_hint,
+        then polls until the user authenticates. The actor_token is sent
+        in the CIBA initiation to establish OBO delegation.
+
+        :param login_hint: Username or identifier of the user to authenticate
+        :param agent_token: The agent's OAuthToken (used as actor_token for delegation)
+        :param scopes: List of OAuth scopes to request
+        :param binding_message: Message displayed to the user during authentication
+        :param notification_channel: Notification channel (email, sms, external)
+        :param timeout: Maximum time to wait for authentication in seconds
+        :param on_initiated: Optional callback invoked with CIBAResponse immediately after
+            the CIBA request is accepted and before polling begins. Use this to notify the
+            caller that a push/email/SMS has been sent and polling is starting.
+            Accepts both sync and async callables.
+        :return: Tuple of (CIBAResponse, OAuthToken)
+        """
+        if not login_hint:
+            raise ValidationError("login_hint is required for CIBA OBO token exchange.")
+        if not agent_token:
+            raise ValidationError("agent_token is required for CIBA OBO token exchange.")
+
+        scope_str = " ".join(scopes) if scopes else None
+
+        try:
+            ciba_response = await self.token_client.initiate_ciba(
+                login_hint=login_hint,
+                scope=scope_str,
+                binding_message=binding_message,
+                notification_channel=notification_channel,
+                actor_token=agent_token.access_token,
+            )
+
+            logger.info(
+                f"CIBA initiated for user '{login_hint}'. auth_req_id: {ciba_response.auth_req_id}, "
+                f"expires_in: {ciba_response.expires_in}s"
+            )
+
+            if on_initiated is not None:
+                result = on_initiated(ciba_response)
+                if asyncio.iscoroutine(result):
+                    await result
+
+            token = await self._poll_for_token(
+                ciba_response=ciba_response,
+                scope=scope_str,
+                timeout=timeout,
+            )
+            return ciba_response, token
+
+        except (CIBAAuthenticationError, ValidationError):
+            raise
+        except Exception as e:
+            logger.error(f"CIBA OBO token exchange failed: {e}")
+            raise TokenError(f"CIBA OBO token exchange failed: {e}")
 
     async def revoke_token(
         self, 

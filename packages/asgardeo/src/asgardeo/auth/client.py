@@ -16,6 +16,7 @@ under the License.
 
 """Async Asgardeo authentication and token clients."""
 
+import base64
 import json
 import logging
 from typing import Any
@@ -27,6 +28,9 @@ from ..models import (
     AsgardeoConfig,
     AsgardeoError,
     AuthenticationError,
+    CIBAAuthenticationError,
+    CIBAResponse,
+    CIBAStatus,
     FlowStatus,
     NetworkError,
     OAuthToken,
@@ -80,8 +84,10 @@ class AsgardeoNativeAuthClient:
             "response_mode": "direct",
         }
 
-        # Only add client_secret if code_verifier is not in params (PKCE flow)
-        if not (params and "code_challenge" in params):
+        # Always authenticate confidential clients even when using PKCE.
+        # PKCE prevents auth code interception; client_secret authenticates the client.
+        # Public clients (no client_secret) rely on PKCE alone.
+        if self.config.client_secret:
             data["client_secret"] = self.config.client_secret
         if state:
             data["state"] = state
@@ -286,7 +292,7 @@ class AsgardeoTokenClient:
         url = f"{self.base_url}/oauth2/token"
         data = {"grant_type": grant_type, "client_id": self.config.client_id}
 
-        if self.config.client_secret and "code_verifier" not in kwargs:
+        if self.config.client_secret:
             data["client_secret"] = self.config.client_secret
 
         if grant_type == "authorization_code":
@@ -311,6 +317,16 @@ class AsgardeoTokenClient:
             scope = kwargs.get("scope")
             if scope:
                 data["scope"] = scope
+        elif grant_type == "urn:openid:params:grant-type:ciba":
+            auth_req_id = kwargs.get("auth_req_id")
+            if not auth_req_id:
+                raise ValidationError(
+                    "auth_req_id is required for CIBA grant type.",
+                )
+            data["auth_req_id"] = auth_req_id
+            scope = kwargs.get("scope")
+            if scope:
+                data["scope"] = scope
         else:
             raise ValidationError(f"Unsupported grant type: {grant_type}")
 
@@ -330,6 +346,19 @@ class AsgardeoTokenClient:
                 scope=resp_json.get("scope"),
             )
         except httpx.HTTPStatusError as e:
+            if grant_type == "urn:openid:params:grant-type:ciba" and e.response.status_code == 400:
+                try:
+                    error_json = e.response.json()
+                    error_code = error_json.get("error", "")
+                    if error_code in (
+                        CIBAStatus.AUTHORIZATION_PENDING,
+                        CIBAStatus.SLOW_DOWN,
+                        CIBAStatus.EXPIRED_TOKEN,
+                        CIBAStatus.ACCESS_DENIED,
+                    ):
+                        raise CIBAAuthenticationError(error_code)
+                except (ValueError, KeyError):
+                    pass
             raise TokenError(
                 f"Token request failed: {e.response.status_code} {e.response.text}",
             )
@@ -339,6 +368,83 @@ class AsgardeoTokenClient:
             raise TokenError(f"Missing required field in token response: {e!s}")
         except Exception as e:
             raise AsgardeoError(f"Unexpected error during token request: {e!s}")
+
+    def _get_basic_auth_header(self) -> str:
+        """Generate Basic auth header value from client credentials.
+
+        :return: Basic auth header value string
+        :raises ValidationError: If client_secret is not configured
+        """
+        if not self.config.client_secret:
+            raise ValidationError("Client secret is required for Basic authentication.")
+        credentials = f"{self.config.client_id}:{self.config.client_secret}"
+        encoded = base64.b64encode(credentials.encode("utf-8")).decode("utf-8")
+        return f"Basic {encoded}"
+
+    async def initiate_ciba(
+        self,
+        login_hint: str,
+        scope: str | None = None,
+        binding_message: str | None = None,
+        notification_channel: str | None = None,
+        actor_token: str | None = None,
+    ) -> CIBAResponse:
+        """Initiate a CIBA backchannel authentication request.
+
+        :param login_hint: Username or identifier of the user to authenticate
+        :param scope: Space-separated scopes to request (defaults to config scope)
+        :param binding_message: Human-readable message displayed during authentication
+        :param notification_channel: Notification channel (email, sms, external)
+        :param actor_token: Optional actor token for OBO delegation
+        :return: CIBAResponse with auth_req_id, interval, expires_in, optional auth_url
+        """
+        url = f"{self.base_url}/oauth2/ciba"
+
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+        data = {
+            "scope": scope or self.config.scope,
+            "login_hint": login_hint,
+        }
+
+        if self.config.client_secret:
+            headers["Authorization"] = self._get_basic_auth_header()
+        else:
+            data["client_id"] = self.config.client_id
+
+        if binding_message:
+            data["binding_message"] = binding_message
+
+        if notification_channel:
+            data["notification_channel"] = notification_channel
+
+        if actor_token:
+            data["actor_token"] = actor_token
+
+        try:
+            response = await self.session.post(
+                url,
+                headers=headers,
+                data=urlencode(data),
+            )
+            response.raise_for_status()
+            resp_json = response.json()
+            return CIBAResponse(
+                auth_req_id=resp_json["auth_req_id"],
+                interval=resp_json.get("interval", 2),
+                expires_in=resp_json.get("expires_in", 120),
+                auth_url=resp_json.get("auth_url"),
+            )
+        except httpx.HTTPStatusError as e:
+            raise AuthenticationError(
+                f"CIBA initiation failed: {e.response.status_code} {e.response.text}",
+            )
+        except httpx.RequestError as e:
+            raise NetworkError(f"Network error during CIBA initiation: {e!s}")
+        except KeyError as e:
+            raise AuthenticationError(f"Missing required field in CIBA response: {e!s}")
+        except Exception as e:
+            raise AsgardeoError(f"Unexpected error during CIBA initiation: {e!s}")
 
     async def refresh_access_token(self, refresh_token: str) -> OAuthToken:
         """Simple token refresh method.
