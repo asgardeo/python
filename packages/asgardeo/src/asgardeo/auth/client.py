@@ -200,6 +200,11 @@ class AsgardeoNativeAuthClient:
         self.flow_id = resp_json.get("flowId", self.flow_id)
         self.flow_status = resp_json.get("flowStatus")
         self.next_step = resp_json.get("nextStep")
+
+
+        # Handle successful completion (supports both Enum and plain string forms)
+        success_completed = getattr(FlowStatus, "SUCCESS_COMPLETED", "SUCCESS_COMPLETED")
+        
         if self.flow_status == FlowStatus.SUCCESS_COMPLETED:
             self.auth_data = resp_json.get("authData")
 
@@ -236,7 +241,7 @@ class AsgardeoNativeAuthClient:
         """Async context manager exit."""
         await self.close()
         return False
-    
+
     async def close(self):
         """Close the auth client and cleanup resources."""
         await self.session.aclose()
@@ -261,7 +266,12 @@ class AsgardeoNativeAuthClient:
         )
 
         # Get tokens
-        return await self.get_tokens()
+        #return await self.get_tokens()
+
+        # Correct code:
+
+        return await self.get_token()
+
 
 
 class AsgardeoTokenClient:
@@ -304,7 +314,7 @@ class AsgardeoTokenClient:
             data["code"] = code
             data["redirect_uri"] = kwargs.get("redirect_uri", self.config.redirect_uri)
             if "code_verifier" in kwargs:
-                data["code_verifier"] = kwargs.get("code_verifier")            
+                data["code_verifier"] = kwargs.get("code_verifier")
             if "actor_token" in kwargs:
                 data["actor_token"] = kwargs.get("actor_token")
         elif grant_type == "refresh_token":
@@ -453,16 +463,16 @@ class AsgardeoTokenClient:
         :return: New OAuthToken instance
         """
         return await self.get_token("refresh_token", refresh_token=refresh_token)
-    
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.session.aclose()
         return False
-    
+
     async def close(self):
         """Close the token client and cleanup resources."""
         await self.session.aclose()
