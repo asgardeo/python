@@ -1,0 +1,114 @@
+name: Auto Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: false
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Detect changed packages
+        id: changes
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          ASGARDEO_CHANGED=false
+          ASGARDEO_AI_CHANGED=false
+
+          if echo "$CHANGED_FILES" | grep -q '^packages/asgardeo/'; then
+            ASGARDEO_CHANGED=true
+          fi
+          if echo "$CHANGED_FILES" | grep -q '^packages/asgardeo-ai/'; then
+            ASGARDEO_AI_CHANGED=true
+          fi
+
+          echo "asgardeo_changed=$ASGARDEO_CHANGED" >> $GITHUB_OUTPUT
+          echo "asgardeo_ai_changed=$ASGARDEO_AI_CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Bump asgardeo version
+        if: steps.changes.outputs.asgardeo_changed == 'true'
+        id: bump_asgardeo
+        working-directory: ./packages/asgardeo
+        run: |
+          poetry version patch
+          NEW_VERSION=$(poetry version -s)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumped asgardeo to $NEW_VERSION"
+
+      - name: Bump asgardeo-ai version
+        if: steps.changes.outputs.asgardeo_ai_changed == 'true'
+        id: bump_asgardeo_ai
+        working-directory: ./packages/asgardeo-ai
+        run: |
+          poetry version patch
+          NEW_VERSION=$(poetry version -s)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumped asgardeo-ai to $NEW_VERSION"
+
+      - name: Update asgardeo dependency in asgardeo-ai
+        if: steps.changes.outputs.asgardeo_changed == 'true' && steps.changes.outputs.asgardeo_ai_changed == 'true'
+        working-directory: ./packages/asgardeo-ai
+        run: |
+          NEW_ASGARDEO_VERSION="${{ steps.bump_asgardeo.outputs.new_version }}"
+          sed -i "s|asgardeo = \"^[0-9.]*\"|asgardeo = \"^$NEW_ASGARDEO_VERSION\"|" pyproject.toml
+          echo "Updated asgardeo dependency to ^$NEW_ASGARDEO_VERSION"
+
+      - name: Commit version bumps
+        id: commit
+        run: |
+          git add packages/*/pyproject.toml
+          if git diff --cached --quiet; then
+            echo "No version changes to commit"
+            echo "committed=false" >> $GITHUB_OUTPUT
+          else
+            git commit -m "chore: bump package versions [skip ci]"
+            git push
+            echo "committed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create asgardeo tag
+        if: steps.changes.outputs.asgardeo_changed == 'true' && steps.commit.outputs.committed == 'true'
+        run: |
+          TAG="asgardeo-v${{ steps.bump_asgardeo.outputs.new_version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created tag: $TAG"
+
+      - name: Create asgardeo-ai tag
+        if: steps.changes.outputs.asgardeo_ai_changed == 'true' && steps.commit.outputs.committed == 'true'
+        run: |
+          TAG="asgardeo-ai-v${{ steps.bump_asgardeo_ai.outputs.new_version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created tag: $TAG"
