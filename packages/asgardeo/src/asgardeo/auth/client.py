@@ -1,6 +1,6 @@
 
 """
-Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
+Copyright (c) 2025-2026, WSO2 LLC. (https://www.wso2.com).
 WSO2 LLC. licenses this file to you under the Apache License,
 Version 2.0 (the "License"); you may not use this file except
 in compliance with the License.
@@ -324,6 +324,18 @@ class AsgardeoTokenClient:
                     "auth_req_id is required for CIBA grant type.",
                 )
             data["auth_req_id"] = auth_req_id
+            scope = kwargs.get("scope")
+            if scope:
+                data["scope"] = scope
+        elif grant_type == "organization_switch":
+            token = kwargs.get("token")
+            switching_organization = kwargs.get("switching_organization")
+            if not token or not switching_organization:
+                raise ValidationError(
+                    "token and switching_organization are required for 'organization_switch' grant type.",
+                )
+            data["token"] = token
+            data["switching_organization"] = switching_organization
             scope = kwargs.get("scope")
             if scope:
                 data["scope"] = scope
