@@ -28,7 +28,9 @@ def generate_pkce_pair() -> Tuple[str, str]:
 
 def generate_state() -> str:
     """Generate a secure random state parameter."""
-    return base64.urlsafe_b64encode(os.urandom(16)).decode('utf-8').rstrip('=')
+    # Inconsistent randomness in generate_state() 
+    return base64.urlsafe_b64encode(secrets.token_bytes(16)).decode("utf-8").rstrip("=")
+
 
 
 def build_authorization_url(base_url: str, params: Dict[str, Any]) -> str:
